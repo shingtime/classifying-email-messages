@@ -1,0 +1,286 @@
+---
+title: "STA 141 ASSIGNMENT 5"
+author: "Junxiao Bu"
+date: "November 20, 2014"
+output: word_document
+---
+
+## Fit models using training data.
+### KNN mothod
+
+STEP 1 : CALCULATE THE DISTANCE USING DIST FUNCTION AND NEAREST DISTANCE MATRIX
+
+```{r}
+load("~/Desktop/sta 141 assignment 5/trainVariables.rda")
+real_class = as.matrix(trainVariables[,"isSpam"])
+### use scale for all variables
+data_dist = scale(trainVariables[,-ncol(trainVariables)])
+## euclidean distance
+distance = as.matrix(dist(data_dist,upper=FALSE,diag=FALSE))
+##Manhattan distance
+distance_man = as.matrix(dist(data_dist,method='manhattan', upper=T))
+## minkowski distance
+distance_min = as.matrix(dist(data_dist,method="minkowski",p=3))
+## euclidean distance order matrix
+nearest_euc = apply(distance,2,order)
+##Manhattan distance order matrix
+nearest_man = apply(distance_man,2,order)
+##minkowski distance order matrix
+nearest_min = apply(distance_min,2,order)
+```
+
+step 2: CROSS VALIDATION FUNCTION
+I will use 10 folds cross validation. l represents which way we want to split the data. l should in the range of 1 to 10. This function will return the index for the subset of test part.
+
+```{r}
+## use the whole index matrix
+cross_validation = function (data,l){
+#Create 10 folds
+   folds = rep(1:10,length = nrow(data))
+     #Segement your data by fold using the which() function 
+        Indexes <- which(folds==l,arr.ind=TRUE)
+        Indexes
+}
+```
+
+STEP 3: get the kth nearest neighbors. I need to get the specific folder index firstly. Then I need to split the order matrix to generate the test data and training data. index represents which group 
+
+
+```{r}
+KNN = function(index,k,data){
+## generate folder index
+  test_matrix = data[,index]
+## In the order matrix, the first row always represents the distance to itself.
+## So I need to delete the first row to get the nearest distance.
+   Knn = apply(test_matrix,2,drop_first,drop=index)
+   Knn[1:k,]  
+}
+```
+
+Write a function to drop the first row
+```{r}
+drop_first = function(x,drop){
+  x[-match(drop,x)]
+}
+```
+
+STEP 4: KNN prediction function. 
+
+For this function, I need to use the last KNN function's result to calculate the prediction for the specific KNN result.
+
+```{r}
+KNN_predict = function(data,real_class,k,index){
+## matrix to store each column's probability to be a SPAM
+  percent = c()
+  knn = matrix(KNN(index,k,data),nrow = k)
+  #knn = as.matrix(KNN(index,k,data))
+## write a loop to get each row's prediction
+
+  for(i in 1:ncol(knn)){
+    percent[i] = sum(real_class[knn[,i],]) / k      
+    }
+## if percent >=0.5, we predict it as a SPAM
+    predict = (percent >= 0.5)
+## consider the case that probability == 0.5
+    predict[percent==0.5] = rbinom(n=1,size=1, prob=0.5)  
+    
+ # percent
+  predict
+}
+
+```
+
+STEP 5: KNN prediction check function. We can get the type one and type two errors from this functions. This function will return the confusion matrix.
+
+```{r}
+KNN_error = function(KNN_predict,real_class,index){
+  
+  identity = real_class[index]
+  value = KNN_predict == real_class[index]
+## correct prediction for spam
+  correct_spam = table(value[identity==TRUE])[2]
+## Type 1 error: real:spam & prediction: ham
+  TYPE1 = table(value[identity==TRUE])[1]
+## correct prediction for Ham
+   correct_ham = table(value[identity==FALSE])[2]
+## Type 2 error: real:ham & prediction: spam
+  TYPE2 = table(value[identity==FALSE])[1]
+## confusion matrix
+  ERROR = matrix(c(correct_spam,TYPE2,TYPE1,correct_ham),nrow=2,ncol=2,byrow=TRUE)
+  colnames(ERROR) = c("TRUE","FALSE")
+  rownames(ERROR) = c("TRUE","FALSE")
+## return the confusion matrix
+  ERROR          
+}
+
+```
+STEP 6: For a given k , apply step 3-5 for all 10 folders. This function will generate the confusion matrix for a given k. I will let the function return type I error rate, type II error rate and the total error rate.
+
+```{r}
+KNN_given_k = function(k,data){
+## initiate the confusion matrix
+  confusion = matrix(c(0,0,0,0),nrow=2,ncol=2)
+  colnames(confusion) = c("TRUE","FALSE")
+  rownames(confusion) = c("TRUE","FALSE")
+## 10 folds
+  for(i in 1:10){
+## store the index for ith test group
+    group = cross_validation(data,i) 
+    knn_predict_mid = KNN_predict(data,real_class,k,group)  
+    confusion = confusion + KNN_error(knn_predict_mid,real_class,group)   
+  }
+   
+   confusion
+   #c(confusion[2,1] / (confusion[1,1] + confusion[2,1] ),confusion[1,2] / (confusion[1,2] +confusion[2,2]) ,(confusion[2,1] + confusion[1,2]) /sum(confusion))
+}
+```
+
+STEP 7: Given different k, get the result of error rate using three kinds of distances.
+
+```{r}
+## calculate error rate for euclidean distance
+ERROR_RATE_euc = sapply(1:30,KNN_given_k,nearest_euc)
+## calculate error rate for manhattan distance
+ERROR_RATE_man = sapply(1:30,KNN_given_k,nearest_man)
+## calculate error rate for minkowski distance(p=3)
+ERROR_RATE_min = sapply(1:30,KNN_given_k,nearest_min)
+par(mfrow=c(1,1))
+plot(ERROR_RATE_euc[3,],col="red",xlab="different K",ylab="ERROR RATE for different distance",ylim=c(0,0.15))
+lines(ERROR_RATE_euc[3,],col="red")
+points(ERROR_RATE_man[3,],col="blue")
+lines(ERROR_RATE_man[3,],col="blue")
+points(ERROR_RATE_min[3,],col="yellow")
+lines(ERROR_RATE_min[3,],col="yellow")
+legend(x="topright",c("ERROR_RATE_euc","ERROR_RATE_man","ERROR_RATE_min"),col=c("red","blue","yellow"),lwd=c(1,1,1),cex=0.5)
+```
+
+From the graph, I can find that all the Apply three kinds of distance, I can find that using manhattan distance can give the lowest prediction error rate when k=3. So I choose to use manhattan distance and let k=3.
+
+Using the confusion matrix, the type I error rate, type II error rate and total prediction error rate are :
+
+```{r}
+KNN_given_k(3,nearest_man)
+```
+
+The type I error rate: 17.47%.
+
+The type II error rate: 3.844%
+
+Total prediction error rate: 7.338%.
+
+Now I can see some characteristics for these misclassified cases.
+
+For k=3, check the misclassified cases. I need to write a function to get all the misclassified cases.
+
+```{r}
+mis_indexes = function(k,real_class,data){
+ mis_index_spam = c()
+  mis_index_ham = c()
+  mis_index = c()
+  for(i in 1:10){
+    group = cross_validation(data,i)
+    knn_predict_mid = KNN_predict(data,real_class,k,group)
+    identity = real_class[group]
+    value = knn_predict_mid == real_class[group]
+    mis_index = c(mis_index, group[which(value==FALSE)])       
+  }
+  mis_index
+}
+## The misclassified cases are:
+mis = mis_indexes(3,real_class,nearest_man)
+```
+
+```{r}
+## misclassified data
+mis_data = trainVariables[mis,]
+## correctly classified data
+cor_data = trainVariables[-mis,]
+
+```
+# all non-numeric variables
+nums = sapply(trainVariables, is.numeric)
+mis_log_name = lapply(mis_data[!nums], table, mis_data$isSpam)
+cor_log_name = lapply(cor_data[!nums], table, cor_data$isSpam)
+
+## logical cases
+par(mfrow = c(1, 2))
+for(i in 1:(30 - sum(nums) - 1)){
+  mosaicplot(mis_log_name[[i]], main = "Comparison for Misclassified Cases", 
+             xlab = names(mis_log_name)[i], ylab = "isSpam",shade = TRUE)
+  mosaicplot(cor_log_name[[i]], main = "Comparison for Correct Cases", 
+             xlab = names(cor_log_name)[i], ylab = "isSpam",shade = TRUE)
+}
+## numeric cases
+
+mis_num_name = lapply(1:sum(nums), function(i) by(mis_data[nums][, i], mis_data$isSpam, mean, na.rm = TRUE))
+cor_num_name = lapply(1:sum(nums), function(i) by(cor_data[nums][, i], cor_data$isSpam, mean, na.rm = TRUE))
+name = names(which(nums=="TRUE"))
+
+# compare the two different cases
+for(i in 1:sum(nums)){
+  barplot(mis_num_name[[i]], main = "Misclassified Cases",
+          xlab = "isSpam", ylab = name[i], col = rainbow(2))
+  barplot(cor_num_name[[i]], main = "Comparison for Correct Cases",
+          xlab = "isSpam", ylab = name[i], col = rainbow(2))
+}
+
+### TEST DATA PART
+Now I will test the new data to compare the prediction error rate. I will use test data for this part.
+
+```{r}
+load("~/Desktop/sta 141 assignment 5/testData.rda")
+## scale test data
+scale_test = scale(testVariables[,-30])
+## scale version of training data
+data_dist
+## compute the distance
+distance_man_new = as.matrix(dist(rbind(scale_test,data_dist),method='manhattan', upper=T))
+distance_man_new = distance_man_new[-(1:2000),]
+nearest_man_new = apply(distance_man_new,2,order)
+```
+
+
+```{r}
+## The indexes for test data are from 1-2000
+new_index = c(1:2000)
+new_predict = KNN_predict(nearest_man_new,real_class,3,new_index)
+new_confusion = KNN_error(new_predict,real_class_new,new_index)
+new_confusion
+## relative error rate in the training dataset
+ERROR_RATE_man[,3]
+```
+
+For the test data, I can look through the misclassified cases.
+```{r}
+check = new_predict==real_class_new[1:2000,]
+##Index for misclassified cases in KNN
+mis_k7 = which(check==FALSE)
+##Index for classified cases in KNN
+cor_k7 = which(check==TRUE)
+```
+
+### Using Blind data to predict the SPAM or HAM.
+
+In this part, I will combine all the training and test data. Then I will use those whole data to predict the blind data.
+
+```{r}
+load("~/Desktop/sta 141 assignment 5/blindTestData.rda")
+scale_blind = scale(blindTestVariables)
+distance_man_blind = as.matrix(dist(rbind(scale_blind,data_dist),method='manhattan', upper=T))
+## The first 808 obs are blind, which we need to predict.
+distance_man_blind = distance_man_blind[-(1:808),]
+nearest_man_blind = apply(distance_man_blind,2,order)
+```
+
+```{r}
+## The indexes for blind data are from 1-808
+new_index_blind = c(1:808)
+new_predict_blind = KNN_predict(nearest_man_blind,real_class,7,new_index_blind)
+head(new_predict_blind)
+new_predict_blind
+
+save(new_predict_blind,file="prediction.rda")
+```
+
+
+

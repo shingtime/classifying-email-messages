@@ -1,0 +1,186 @@
+---
+title: "Classification Tree"
+author: "Junxiao Bu"
+date: "November 23, 2014"
+output: html_document
+---
+### TRAINING DATA PART
+
+### explore variable transformation
+```{r}
+library(rpart)
+log_Vars = c()
+## get all the logical variables
+for (i in 1:ncol(trainVariables)) {
+  if (mode(trainVariables[,i]) == "logical") log_Vars = c(log_Vars,i)}
+
+der = trainVariables
+## factor all the logical variables.
+for (i in log_Vars) {der[,i] = as.factor(trainVariables[,i])}
+par(mfrow=c(1,1))
+tree = rpart(isSpam~., data = der, method="class")
+plot(tree,uniform=TRUE)
+text(tree)
+summary(tree)
+## predict each email of the training dataset.
+predict = predict(tree,der[-30],type="class")  
+table(predict)
+```
+
+Now I need to write a funtion to calculate the confusion matrix for the classification tree.
+
+```{r}
+confusion_matrix = function(predict,data){
+  trueclass = data[,"isSpam"]
+## check the differences between prediction and true class of each email.
+classify = trueclass == predict
+## correct prediction for spam
+correct_spam1 = table(classify[trueclass==TRUE])[2]
+## Type 1 error: real:spam & prediction: ham
+  TYPE1_1 = table(classify[trueclass==TRUE])[1]
+## correct prediction for Ham
+   correct_ham1 = table(classify[trueclass==FALSE])[2]
+## Type 2 error: real:ham & prediction: spam
+  TYPE2_1 = table(classify[trueclass==FALSE])[1]
+## confusion matrix
+  ERROR_1 = matrix(c(correct_spam1,TYPE2_1,TYPE1_1,correct_ham1),nrow=2,ncol=2,byrow=TRUE)
+  colnames(ERROR_1) = c("TRUE","FALSE")
+  rownames(ERROR_1) = c("TRUE","FALSE")
+  ERROR_1 
+}
+```
+
+Using the confusion matrix, the type I error rate, type II error rate and total prediction error rate are :
+```{r}
+ERROR_1 = confusion_matrix(predict,trainVariables)
+ERROR_1
+error_rate = function(ERROR_1){
+  c(ERROR_1[2,1] / (ERROR_1[1,1] + ERROR_1[2,1]),ERROR_1[1,2] / (ERROR_1[1,2] +ERROR_1[2,2]) , (ERROR_1[2,1] + ERROR_1[1,2]) /sum(ERROR_1))
+  
+}
+error_rate(ERROR_1)
+```
+### monotonic transformation: square
+num_Vars = c()
+for (i in 1:ncol(trainVariables)) {
+  if (mode(trainVariables[,i]) != "logical") num_Vars = c(num_Vars,i)}
+der_square = trainVariables
+for (i in num_Vars) {der_square[,i] = (trainVariables[,i])^2}
+for (i in log_Vars) {der_square[,i] = as.factor(trainVariables[,i])}
+tree_square = rpart(isSpam~., data = der_square, method="class")
+predict_square = predict(tree_square,der_square[-30],type="class") 
+error_square = confusion_matrix(predict_square,trainVariables)
+error_square
+### not monotonic transformation: sin
+der_sin = trainVariables
+for (i in num_Vars) {der_sin[,i] = sin(trainVariables[,i])}
+for (i in log_Vars) {der_sin[,i] = as.factor(trainVariables[,i])}
+tree_sin = rpart(isSpam~., data = der_square, method="class")
+predict_sin = predict(tree_sin,der_sin[-30],type="class") 
+error_sin = confusion_matrix(predict_sin,trainVariables)
+error_sin
+### 1/ variables
+der_over = trainVariables
+for (i in num_Vars) {der_over[,i] = 1/ (trainVariables[,i])}
+for (i in log_Vars) {der_over[,i] = as.factor(trainVariables[,i])}
+tree_over = rpart(isSpam~., data = der_over, method="class")
+predict_over = predict(tree_over,der_over[-30],type="class") 
+error_over = confusion_matrix(predict_over,trainVariables)
+error_over
+error_rate(error_over)
+
+Now I can see some characteristics for these misclassified cases in the training data set.
+
+```{r}
+check0 = trainVariables[,"isSpam"] == predict
+## index for misclassified obs
+mis_c = which(check0==FALSE)
+## index for correctly classified obs
+#cor_c = which(check0==TRUE)
+## misclassified data
+mis_cla = trainVariables[mis_c,]
+## correctly classified data
+cor_cla = trainVariables[-mis_c,]
+```
+# all non-numeric variables
+nums = sapply(trainVariables, is.numeric)
+mis_log_tree = lapply(mis_cla[!nums], table, mis_cla$isSpam)
+cor_log_tree = lapply(cor_cla[!nums], table, cor_cla$isSpam)
+## logical cases
+par(mfrow = c(1, 2))
+for(i in 1:(30 - sum(nums) - 1)){
+  mosaicplot(mis_log_tree[[i]], main = "Comparison for Misclassified Cases", 
+             xlab = names(mis_log_tree)[i], ylab = "isSpam",shade = TRUE)
+  mosaicplot(cor_log_tree[[i]], main = "Comparison for Correct Cases", 
+             xlab = names(cor_log_tree)[i], ylab = "isSpam",shade = TRUE)
+}
+## numeric cases
+mis_num_tree = lapply(1:sum(nums), function(i) by(mis_cla[nums][, i], mis_cla$isSpam, mean, na.rm = TRUE))
+cor_num_tree = lapply(1:sum(nums), function(i) by(cor_cla[nums][, i], cor_cla$isSpam, mean, na.rm = TRUE))
+name = names(which(nums=="TRUE"))
+# compare the two different cases
+for(i in 1:sum(nums)){
+  barplot(mis_num_tree[[i]], main = "Misclassified Cases",
+          xlab = "isSpam", ylab = name[i], col = rainbow(2))
+  barplot(cor_num_tree[[i]], main = "Comparison for Correct Cases",
+          xlab = "isSpam", ylab = name[i], col = rainbow(2))
+}
+### TEST DATA PART
+
+Using the result from the training data. Calculate the the result. First, use old model to fit test data.
+
+```{r}
+log_Var_test = c()
+## get all the logical variables
+for (i in 1:ncol(testVariables)) {
+  if (mode(testVariables[,i]) == "logical") log_Var_test = c(log_Var_test,i)}
+ders = testVariables
+## factor all the logical variables.
+for (i in log_Var_test) {ders[,i] = as.factor(testVariables[,i])}
+## using the results in the training data, calculate the prediction for test data.
+predict_test = predict(tree,newdata=ders[-30],method="class") 
+```
+##The confusion matrix for test data is:
+logical = rep(0,2000)
+predict_test = cbind(predict_test,logical)
+## generate a new column to indicate if this observation is SPAM or HAM.
+predict_test[,3] = predict_test[,1] <  predict_test[,2]
+## confusion matrix
+error_test = confusion_matrix(predict_test[,3],testVariables)
+error_test
+## error rate
+error_rate(error_test)
+
+Now Let's check the misclassified cases. I will compare the reult with the misclassified cases using KNN.
+
+```{r}
+## generate the logical matrix to check the difference between true class and prediction
+check1 = testVariables[,"isSpam"] == predict_test[,3]
+## Index for misclassified cases in classification tree
+mis_class = which(check1==FALSE)
+## Index for classified cases in classification tree
+corr_class = which(check1==TRUE)
+```
+Now I can check if how many misclassified cases are same using both methods.Besides, I can also check how many same cases are correclty specified using both methods.
+## check how many common cases are correclty classified.
+common_cor = Reduce(intersect,list(corr_class,cor_k7))
+length(common_cor)
+## check how many common cases are misclassified.
+common_mis = Reduce(intersect,list(mis_class,mis_k7))
+length(common_mis)
+### Using Blind data to predict the SPAM or HAM.
+
+I will use blind data to predict if all the emails are SPAM or HAM.
+
+```{r}
+log_Var_blind = c()
+## get all the logical variables
+for (i in 1:ncol(blindTestVariables)) {
+  if (mode(blindTestVariables[,i]) == "logical") log_Var_blind = c(log_Var_blind,i)}
+ders_blind = blindTestVariables
+## factor all the logical variables.
+for (i in log_Var_blind) {ders_blind[,i] = as.factor(blindTestVariables[,i])}
+## predict each email of the blind dataset.
+predict_blind = predict(tree,newdata=ders_blind,type="class")  
+head(predict_blind)
+```
